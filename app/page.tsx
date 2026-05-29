@@ -1,12 +1,47 @@
+'use client'
+import { useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase'
+
 export default function Home() {
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        window.location.href = '/login'
+      } else {
+        setLoading(false)
+      }
+    })
+  }, [])
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-gray-400 text-sm">Loading...</p>
+      </main>
+    )
+  }
+
   return (
     <main className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-md mx-auto">
-        
-        <h1 className="text-2xl font-semibold text-gray-900 mb-1">
-          WealthView
-        </h1>
-        <p className="text-sm text-gray-500 mb-6">Good evening, Chris</p>
+
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900">WealthView</h1>
+            <p className="text-sm text-gray-500">Good evening, Anthony</p>
+          </div>
+          <button
+            onClick={async () => {
+              await supabase.auth.signOut()
+              window.location.href = '/login'
+            }}
+            className="text-xs text-gray-400 hover:text-gray-600"
+          >
+            Sign out
+          </button>
+        </div>
 
         <div className="bg-blue-50 rounded-2xl p-5 mb-4">
           <p className="text-sm text-blue-700 mb-1">Net worth</p>
@@ -76,12 +111,12 @@ export default function Home() {
                 <div className="w-2 h-2 rounded-full bg-red-400"></div>
                 <span className="text-sm text-gray-700">Chase Sapphire</span>
               </div>
-              <span className="text-sm font-semibold text-red-600">-$1,840</span>
+              <span className="text-sm font-semibold text-gray-900 text-red-600">-$1,840</span>
             </div>
           </div>
         </div>
 
       </div>
     </main>
-  );
+  )
 }
