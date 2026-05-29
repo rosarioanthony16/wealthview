@@ -44,6 +44,37 @@ export default function Home() {
   const [accessToken, setAccessToken] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
 
+  // Auto logout after 15 minutes of inactivity
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>
+
+    const resetTimer = () => {
+      clearTimeout(timer)
+      timer = setTimeout(async () => {
+        await supabase.auth.signOut()
+        window.location.href = '/login'
+      }, 15 * 60 * 1000)
+    }
+
+    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart']
+    events.forEach(e => window.addEventListener(e, resetTimer))
+    resetTimer()
+
+    return () => {
+      clearTimeout(timer)
+      events.forEach(e => window.removeEventListener(e, resetTimer))
+    }
+  }, [])
+
+  // Log out when tab/browser closes
+  useEffect(() => {
+    const handleUnload = () => {
+      supabase.auth.signOut()
+    }
+    window.addEventListener('beforeunload', handleUnload)
+    return () => window.removeEventListener('beforeunload', handleUnload)
+  }, [])
+
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) {
