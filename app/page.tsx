@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { usePlaidLink } from 'react-plaid-link'
 
-function PlaidLinkButton({ onSuccess }: { onSuccess: (access_token: string) => void }) {
+function PlaidLinkButton({ onSuccess, minimal }: { onSuccess: (access_token: string) => void, minimal?: boolean }) {
   const [linkToken, setLinkToken] = useState<string | null>(null)
 
   useEffect(() => {
@@ -27,11 +27,23 @@ function PlaidLinkButton({ onSuccess }: { onSuccess: (access_token: string) => v
     onSuccess: onPlaidSuccess,
   })
 
+  if (minimal) {
+    return (
+      <button
+        onClick={() => open()}
+        disabled={!ready}
+        className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+      >
+        + Add account
+      </button>
+    )
+  }
+
   return (
     <button
       onClick={() => open()}
       disabled={!ready}
-      className="w-full bg-blue-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
+      className="w-full border border-dashed border-gray-300 text-gray-500 rounded-2xl py-4 text-sm hover:border-blue-400 hover:text-blue-600 disabled:opacity-50 transition-colors"
     >
       + Connect a bank account
     </button>
@@ -39,6 +51,19 @@ function PlaidLinkButton({ onSuccess }: { onSuccess: (access_token: string) => v
 }
 
 type Tip = { type: 'warning' | 'good' | 'idea', title: string, body: string }
+
+const tipConfig = {
+  warning: { bg: 'bg-amber-50 border-amber-100', icon: '⚠', iconBg: 'bg-amber-100', iconColor: 'text-amber-600' },
+  good:    { bg: 'bg-green-50 border-green-100',  icon: '✓', iconBg: 'bg-green-100',  iconColor: 'text-green-600' },
+  idea:    { bg: 'bg-blue-50 border-blue-100',    icon: '✦', iconBg: 'bg-blue-100',   iconColor: 'text-blue-600' },
+}
+
+const accountColors: Record<string, string> = {
+  depository: 'bg-blue-500',
+  credit:     'bg-red-400',
+  investment: 'bg-violet-500',
+  loan:       'bg-orange-400',
+}
 
 export default function Home() {
   const [loading, setLoading] = useState(true)
@@ -111,12 +136,12 @@ export default function Home() {
     await fetchBalances(token)
   }
 
-  async function fetchTips(accs: any[]) {
+  async function fetchTips() {
     setTipsLoading(true)
     const res = await fetch('/api/ai-tips', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accounts: accs }),
+      body: JSON.stringify({ accounts }),
     })
     const data = await res.json()
     setTips(data.tips || [])
@@ -128,35 +153,41 @@ export default function Home() {
     return acc.type === 'credit' ? sum - bal : sum + bal
   }, 0)
 
-  const tipStyles: Record<string, { bg: string, icon: string, iconColor: string }> = {
-    warning: { bg: 'bg-amber-50', icon: '⚠', iconColor: 'text-amber-600' },
-    good:    { bg: 'bg-green-50', icon: '✓', iconColor: 'text-green-600' },
-    idea:    { bg: 'bg-blue-50',  icon: '💡', iconColor: 'text-blue-600' },
-  }
+  const totalAssets = accounts
+    .filter(a => a.type !== 'credit' && a.type !== 'loan')
+    .reduce((sum, a) => sum + (a.balances.current ?? 0), 0)
+
+  const totalDebt = accounts
+    .filter(a => a.type === 'credit' || a.type === 'loan')
+    .reduce((sum, a) => sum + (a.balances.current ?? 0), 0)
 
   if (loading) {
     return (
       <main className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-400 text-sm">Loading...</p>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-gray-400 text-sm">Loading your dashboard...</p>
+        </div>
       </main>
     )
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-md mx-auto">
+    <main className="min-h-screen bg-gray-50">
+      <div className="max-w-md mx-auto px-4 pb-8">
 
-        <div className="flex justify-between items-center mb-6">
+        {/* Header */}
+        <div className="flex justify-between items-center py-6">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900">WealthView</h1>
-            <p className="text-sm text-gray-500">Good evening, Anthony</p>
+            <h1 className="text-xl font-semibold text-gray-900">WealthView</h1>
+            <p className="text-xs text-gray-400 mt-0.5">Good evening, Anthony</p>
           </div>
           <button
             onClick={async () => {
               await supabase.auth.signOut()
               window.location.href = '/login'
             }}
-            className="text-xs text-gray-400 hover:text-gray-600"
+            className="text-xs text-gray-400 hover:text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-1.5"
           >
             Sign out
           </button>
@@ -164,32 +195,49 @@ export default function Home() {
 
         {accounts.length > 0 ? (
           <>
-            <div className="bg-blue-50 rounded-2xl p-5 mb-4">
-              <p className="text-sm text-blue-700 mb-1">Net worth</p>
-              <p className="text-4xl font-semibold text-blue-900">
+            {/* Net worth hero */}
+            <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-3xl p-6 mb-4 text-white">
+              <p className="text-blue-200 text-xs mb-1 uppercase tracking-wide">Net worth</p>
+              <p className="text-4xl font-semibold mb-4">
                 ${netWorth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
+              <div className="flex gap-4">
+                <div>
+                  <p className="text-blue-200 text-xs mb-0.5">Assets</p>
+                  <p className="text-white font-semibold text-sm">
+                    ${totalAssets.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+                <div className="w-px bg-blue-500"></div>
+                <div>
+                  <p className="text-blue-200 text-xs mb-0.5">Debt</p>
+                  <p className="text-white font-semibold text-sm">
+                    ${totalDebt.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+              </div>
             </div>
 
-            <div className="bg-white rounded-2xl p-4 border border-gray-100 mb-4">
-              <p className="text-sm font-semibold text-gray-900 mb-3">Accounts</p>
-              <div className="flex flex-col gap-3">
+            {/* Accounts */}
+            <div className="bg-white rounded-2xl border border-gray-100 mb-4 overflow-hidden">
+              <div className="flex justify-between items-center px-4 pt-4 pb-2">
+                <p className="text-sm font-semibold text-gray-900">Accounts</p>
+                <PlaidLinkButton onSuccess={handlePlaidSuccess} minimal />
+              </div>
+              <div className="divide-y divide-gray-50">
                 {accounts.map(acc => {
                   const balance = acc.balances.current ?? 0
                   const isCredit = acc.type === 'credit'
-                  const colors: Record<string, string> = {
-                    depository: 'bg-blue-500',
-                    credit: 'bg-red-400',
-                    investment: 'bg-purple-500',
-                    loan: 'bg-orange-400',
-                  }
                   return (
-                    <div key={acc.account_id} className="flex justify-between items-center">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${colors[acc.type] ?? 'bg-gray-400'}`}></div>
-                        <span className="text-sm text-gray-700">{acc.name}</span>
+                    <div key={acc.account_id} className="flex justify-between items-center px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-2 h-2 rounded-full ${accountColors[acc.type] ?? 'bg-gray-400'}`}></div>
+                        <div>
+                          <p className="text-sm text-gray-800">{acc.name}</p>
+                          <p className="text-xs text-gray-400 capitalize">{acc.type}</p>
+                        </div>
                       </div>
-                      <span className={`text-sm font-semibold ${isCredit ? 'text-red-600' : 'text-gray-900'}`}>
+                      <span className={`text-sm font-semibold ${isCredit ? 'text-red-500' : 'text-gray-900'}`}>
                         {isCredit ? '-' : ''}${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
@@ -198,18 +246,23 @@ export default function Home() {
               </div>
             </div>
 
+            {/* AI Tips */}
             {tips.length > 0 && (
-              <div className="bg-white rounded-2xl p-4 border border-gray-100 mb-4">
-                <p className="text-sm font-semibold text-gray-900 mb-3">AI insights</p>
-                <div className="flex flex-col gap-3">
+              <div className="bg-white rounded-2xl border border-gray-100 mb-4 overflow-hidden">
+                <div className="px-4 pt-4 pb-2">
+                  <p className="text-sm font-semibold text-gray-900">AI insights</p>
+                </div>
+                <div className="flex flex-col gap-2 px-4 pb-4">
                   {tips.map((tip, i) => {
-                    const style = tipStyles[tip.type] ?? tipStyles.idea
+                    const config = tipConfig[tip.type] ?? tipConfig.idea
                     return (
-                      <div key={i} className={`${style.bg} rounded-xl p-3 flex gap-3`}>
-                        <span className={`${style.iconColor} text-base mt-0.5`}>{style.icon}</span>
+                      <div key={i} className={`${config.bg} border rounded-xl p-3 flex gap-3`}>
+                        <div className={`${config.iconBg} ${config.iconColor} w-7 h-7 rounded-full flex items-center justify-center text-sm flex-shrink-0 mt-0.5`}>
+                          {config.icon}
+                        </div>
                         <div>
                           <p className="text-sm font-semibold text-gray-900">{tip.title}</p>
-                          <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">{tip.body}</p>
+                          <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{tip.body}</p>
                         </div>
                       </div>
                     )
@@ -218,26 +271,35 @@ export default function Home() {
               </div>
             )}
 
-            <button
-              onClick={() => fetchTips(accounts)}
-              disabled={tipsLoading}
-              className="w-full bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 disabled:opacity-50 mb-3"
-            >
-              {tipsLoading ? 'Analyzing...' : '✦ Get AI insights'}
-            </button>
-
-            <button
-              onClick={() => fetchBalances(accessToken!)}
-              className="w-full border border-gray-200 text-gray-600 rounded-xl py-3 text-sm font-semibold hover:bg-gray-50 mb-3"
-            >
-              Refresh balances
-            </button>
-
-            <PlaidLinkButton onSuccess={handlePlaidSuccess} />
+            {/* Actions */}
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={fetchTips}
+                disabled={tipsLoading}
+                className="w-full bg-violet-600 text-white rounded-2xl py-3.5 text-sm font-semibold hover:bg-violet-700 disabled:opacity-50 transition-colors"
+              >
+                {tipsLoading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    Analyzing...
+                  </span>
+                ) : '✦ Get AI insights'}
+              </button>
+              <button
+                onClick={() => fetchBalances(accessToken!)}
+                className="w-full bg-white border border-gray-200 text-gray-600 rounded-2xl py-3.5 text-sm font-semibold hover:bg-gray-50 transition-colors"
+              >
+                Refresh balances
+              </button>
+            </div>
           </>
         ) : (
-          <div className="bg-white rounded-2xl p-6 border border-gray-100 mb-4 text-center">
-            <p className="text-gray-500 text-sm mb-4">Connect your bank accounts to get started</p>
+          <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center">
+            <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-2xl">
+              🏦
+            </div>
+            <p className="text-gray-900 font-semibold mb-1">Connect your accounts</p>
+            <p className="text-gray-400 text-sm mb-6">Link your banks to see your complete financial picture</p>
             <PlaidLinkButton onSuccess={handlePlaidSuccess} />
           </div>
         )}
