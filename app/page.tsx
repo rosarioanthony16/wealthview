@@ -105,35 +105,43 @@ export default function Home() {
       }
       const uid = session.user.id
       setUserId(uid)
-      const { data } = await supabase
-        .from('plaid_tokens')
-        .select('access_token')
-        .eq('user_id', uid)
-        .single()
-      if (data?.access_token) {
-        await fetchBalances(data.access_token)
-      }
+await loadAllBalances(uid)
       setLoading(false)
     })
   }, [])
 
-  async function fetchBalances(token: string) {
+async function fetchBalances(token: string) {
     const res = await fetch('/api/plaid/balances', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ access_token: token }),
     })
     const data = await res.json()
-    setAccounts(data.accounts || [])
-    setAccessToken(token)
+    return data.accounts || []
   }
 
-  async function handlePlaidSuccess(token: string) {
+  async function loadAllBalances(uid: string) {
+    const { data: tokens } = await supabase
+      .from('plaid_tokens')
+      .select('access_token')
+      .eq('user_id', uid)
+
+    if (!tokens || tokens.length === 0) return
+
+    const results = await Promise.all(
+      tokens.map(t => fetchBalances(t.access_token))
+    )
+    const allAccounts = results.flat()
+    setAccounts(allAccounts)
+    setAccessToken(tokens[0].access_token)
+  }
+
+async function handlePlaidSuccess(token: string) {
     if (!userId) return
     await supabase
       .from('plaid_tokens')
-      .upsert({ user_id: userId, access_token: token }, { onConflict: 'user_id' })
-    await fetchBalances(token)
+      .insert({ user_id: userId, access_token: token })
+    await loadAllBalances(userId)
   }
 
   async function fetchTips() {
@@ -286,7 +294,7 @@ export default function Home() {
                 ) : '✦ Get AI insights'}
               </button>
               <button
-                onClick={() => fetchBalances(accessToken!)}
+               onClick={() => loadAllBalances(userId!)}
                 className="w-full bg-white border border-gray-200 text-gray-600 rounded-2xl py-3.5 text-sm font-semibold hover:bg-gray-50 transition-colors"
               >
                 Refresh balances
