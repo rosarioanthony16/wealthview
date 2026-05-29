@@ -42,14 +42,28 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [accounts, setAccounts] = useState<any[]>([])
   const [accessToken, setAccessToken] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) {
         window.location.href = '/login'
-      } else {
-        setLoading(false)
+        return
       }
+      const uid = session.user.id
+      setUserId(uid)
+
+      const { data } = await supabase
+        .from('plaid_tokens')
+        .select('access_token')
+        .eq('user_id', uid)
+        .single()
+
+      if (data?.access_token) {
+        await fetchBalances(data.access_token)
+      }
+
+      setLoading(false)
     })
   }, [])
 
@@ -62,6 +76,16 @@ export default function Home() {
     const data = await res.json()
     setAccounts(data.accounts || [])
     setAccessToken(token)
+  }
+
+  async function handlePlaidSuccess(token: string) {
+    if (!userId) return
+
+    await supabase
+      .from('plaid_tokens')
+      .upsert({ user_id: userId, access_token: token }, { onConflict: 'user_id' })
+
+    await fetchBalances(token)
   }
 
   const netWorth = accounts.reduce((sum, acc) => {
@@ -139,11 +163,13 @@ export default function Home() {
             >
               Refresh balances
             </button>
+
+            <PlaidLinkButton onSuccess={handlePlaidSuccess} />
           </>
         ) : (
           <div className="bg-white rounded-2xl p-6 border border-gray-100 mb-4 text-center">
             <p className="text-gray-500 text-sm mb-4">Connect your bank accounts to get started</p>
-            <PlaidLinkButton onSuccess={fetchBalances} />
+            <PlaidLinkButton onSuccess={handlePlaidSuccess} />
           </div>
         )}
 
