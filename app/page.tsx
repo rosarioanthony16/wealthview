@@ -38,16 +38,18 @@ function PlaidLinkButton({ onSuccess }: { onSuccess: (access_token: string) => v
   )
 }
 
+type Tip = { type: 'warning' | 'good' | 'idea', title: string, body: string }
+
 export default function Home() {
   const [loading, setLoading] = useState(true)
   const [accounts, setAccounts] = useState<any[]>([])
   const [accessToken, setAccessToken] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
+  const [tips, setTips] = useState<Tip[]>([])
+  const [tipsLoading, setTipsLoading] = useState(false)
 
-  // Auto logout after 15 minutes of inactivity
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>
-
     const resetTimer = () => {
       clearTimeout(timer)
       timer = setTimeout(async () => {
@@ -55,22 +57,17 @@ export default function Home() {
         window.location.href = '/login'
       }, 15 * 60 * 1000)
     }
-
     const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart']
     events.forEach(e => window.addEventListener(e, resetTimer))
     resetTimer()
-
     return () => {
       clearTimeout(timer)
       events.forEach(e => window.removeEventListener(e, resetTimer))
     }
   }, [])
 
-  // Log out when tab/browser closes
   useEffect(() => {
-    const handleUnload = () => {
-      supabase.auth.signOut()
-    }
+    const handleUnload = () => { supabase.auth.signOut() }
     window.addEventListener('beforeunload', handleUnload)
     return () => window.removeEventListener('beforeunload', handleUnload)
   }, [])
@@ -83,17 +80,14 @@ export default function Home() {
       }
       const uid = session.user.id
       setUserId(uid)
-
       const { data } = await supabase
         .from('plaid_tokens')
         .select('access_token')
         .eq('user_id', uid)
         .single()
-
       if (data?.access_token) {
         await fetchBalances(data.access_token)
       }
-
       setLoading(false)
     })
   }, [])
@@ -111,18 +105,34 @@ export default function Home() {
 
   async function handlePlaidSuccess(token: string) {
     if (!userId) return
-
     await supabase
       .from('plaid_tokens')
       .upsert({ user_id: userId, access_token: token }, { onConflict: 'user_id' })
-
     await fetchBalances(token)
+  }
+
+  async function fetchTips(accs: any[]) {
+    setTipsLoading(true)
+    const res = await fetch('/api/ai-tips', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accounts: accs }),
+    })
+    const data = await res.json()
+    setTips(data.tips || [])
+    setTipsLoading(false)
   }
 
   const netWorth = accounts.reduce((sum, acc) => {
     const bal = acc.balances.current ?? 0
     return acc.type === 'credit' ? sum - bal : sum + bal
   }, 0)
+
+  const tipStyles: Record<string, { bg: string, icon: string, iconColor: string }> = {
+    warning: { bg: 'bg-amber-50', icon: '⚠', iconColor: 'text-amber-600' },
+    good:    { bg: 'bg-green-50', icon: '✓', iconColor: 'text-green-600' },
+    idea:    { bg: 'bg-blue-50',  icon: '💡', iconColor: 'text-blue-600' },
+  }
 
   if (loading) {
     return (
@@ -187,6 +197,34 @@ export default function Home() {
                 })}
               </div>
             </div>
+
+            {tips.length > 0 && (
+              <div className="bg-white rounded-2xl p-4 border border-gray-100 mb-4">
+                <p className="text-sm font-semibold text-gray-900 mb-3">AI insights</p>
+                <div className="flex flex-col gap-3">
+                  {tips.map((tip, i) => {
+                    const style = tipStyles[tip.type] ?? tipStyles.idea
+                    return (
+                      <div key={i} className={`${style.bg} rounded-xl p-3 flex gap-3`}>
+                        <span className={`${style.iconColor} text-base mt-0.5`}>{style.icon}</span>
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">{tip.title}</p>
+                          <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">{tip.body}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={() => fetchTips(accounts)}
+              disabled={tipsLoading}
+              className="w-full bg-purple-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-purple-700 disabled:opacity-50 mb-3"
+            >
+              {tipsLoading ? 'Analyzing...' : '✦ Get AI insights'}
+            </button>
 
             <button
               onClick={() => fetchBalances(accessToken!)}
