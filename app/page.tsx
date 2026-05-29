@@ -1,9 +1,47 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { usePlaidLink } from 'react-plaid-link'
+
+function PlaidLinkButton({ onSuccess }: { onSuccess: (access_token: string) => void }) {
+  const [linkToken, setLinkToken] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/plaid/create-link-token', { method: 'POST' })
+      .then(res => res.json())
+      .then(data => setLinkToken(data.link_token))
+  }, [])
+
+  const onPlaidSuccess = useCallback(async (public_token: string) => {
+    const res = await fetch('/api/plaid/exchange-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ public_token }),
+    })
+    const data = await res.json()
+    onSuccess(data.access_token)
+  }, [onSuccess])
+
+  const { open, ready } = usePlaidLink({
+    token: linkToken ?? '',
+    onSuccess: onPlaidSuccess,
+  })
+
+  return (
+    <button
+      onClick={() => open()}
+      disabled={!ready}
+      className="w-full bg-blue-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
+    >
+      + Connect a bank account
+    </button>
+  )
+}
 
 export default function Home() {
   const [loading, setLoading] = useState(true)
+  const [accounts, setAccounts] = useState<any[]>([])
+  const [accessToken, setAccessToken] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -14,6 +52,22 @@ export default function Home() {
       }
     })
   }, [])
+
+  async function fetchBalances(token: string) {
+    const res = await fetch('/api/plaid/balances', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access_token: token }),
+    })
+    const data = await res.json()
+    setAccounts(data.accounts || [])
+    setAccessToken(token)
+  }
+
+  const netWorth = accounts.reduce((sum, acc) => {
+    const bal = acc.balances.current ?? 0
+    return acc.type === 'credit' ? sum - bal : sum + bal
+  }, 0)
 
   if (loading) {
     return (
@@ -43,78 +97,55 @@ export default function Home() {
           </button>
         </div>
 
-        <div className="bg-blue-50 rounded-2xl p-5 mb-4">
-          <p className="text-sm text-blue-700 mb-1">Net worth</p>
-          <p className="text-4xl font-semibold text-blue-900">$184,320</p>
-          <p className="text-sm text-green-600 mt-1">↑ +$2,140 this month</p>
-        </div>
+        {accounts.length > 0 ? (
+          <>
+            <div className="bg-blue-50 rounded-2xl p-5 mb-4">
+              <p className="text-sm text-blue-700 mb-1">Net worth</p>
+              <p className="text-4xl font-semibold text-blue-900">
+                ${netWorth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+            </div>
 
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div className="bg-white rounded-xl p-4 border border-gray-100">
-            <p className="text-xs text-gray-500 mb-1">Cash & savings</p>
-            <p className="text-lg font-semibold text-gray-900">$28,450</p>
-          </div>
-          <div className="bg-white rounded-xl p-4 border border-gray-100">
-            <p className="text-xs text-gray-500 mb-1">Investments</p>
-            <p className="text-lg font-semibold text-gray-900">$201,870</p>
-          </div>
-          <div className="bg-white rounded-xl p-4 border border-gray-100">
-            <p className="text-xs text-gray-500 mb-1">Total debt</p>
-            <p className="text-lg font-semibold text-red-600">$46,000</p>
-          </div>
-          <div className="bg-white rounded-xl p-4 border border-gray-100">
-            <p className="text-xs text-gray-500 mb-1">Saved this month</p>
-            <p className="text-lg font-semibold text-gray-900">$1,240</p>
-          </div>
-        </div>
+            <div className="bg-white rounded-2xl p-4 border border-gray-100 mb-4">
+              <p className="text-sm font-semibold text-gray-900 mb-3">Accounts</p>
+              <div className="flex flex-col gap-3">
+                {accounts.map(acc => {
+                  const balance = acc.balances.current ?? 0
+                  const isCredit = acc.type === 'credit'
+                  const colors: Record<string, string> = {
+                    depository: 'bg-blue-500',
+                    credit: 'bg-red-400',
+                    investment: 'bg-purple-500',
+                    loan: 'bg-orange-400',
+                  }
+                  return (
+                    <div key={acc.account_id} className="flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${colors[acc.type] ?? 'bg-gray-400'}`}></div>
+                        <span className="text-sm text-gray-700">{acc.name}</span>
+                      </div>
+                      <span className={`text-sm font-semibold ${isCredit ? 'text-red-600' : 'text-gray-900'}`}>
+                        {isCredit ? '-' : ''}${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
 
-        <div className="bg-white rounded-2xl p-4 border border-gray-100">
-          <p className="text-sm font-semibold text-gray-900 mb-3">Accounts</p>
-          <div className="flex flex-col gap-3">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                <span className="text-sm text-gray-700">Chase Checking</span>
-              </div>
-              <span className="text-sm font-semibold text-gray-900">$6,240</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                <span className="text-sm text-gray-700">Capital One HYSA</span>
-              </div>
-              <span className="text-sm font-semibold text-gray-900">$22,210</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-purple-500"></div>
-                <span className="text-sm text-gray-700">Roth IRA</span>
-              </div>
-              <span className="text-sm font-semibold text-gray-900">$48,300</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
-                <span className="text-sm text-gray-700">401(k)</span>
-              </div>
-              <span className="text-sm font-semibold text-gray-900">$136,870</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-teal-500"></div>
-                <span className="text-sm text-gray-700">Corebridge LOSAP</span>
-              </div>
-              <span className="text-sm font-semibold text-gray-900">$16,700</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-red-400"></div>
-                <span className="text-sm text-gray-700">Chase Sapphire</span>
-              </div>
-              <span className="text-sm font-semibold text-gray-900 text-red-600">-$1,840</span>
-            </div>
+            <button
+              onClick={() => fetchBalances(accessToken!)}
+              className="w-full border border-gray-200 text-gray-600 rounded-xl py-3 text-sm font-semibold hover:bg-gray-50 mb-3"
+            >
+              Refresh balances
+            </button>
+          </>
+        ) : (
+          <div className="bg-white rounded-2xl p-6 border border-gray-100 mb-4 text-center">
+            <p className="text-gray-500 text-sm mb-4">Connect your bank accounts to get started</p>
+            <PlaidLinkButton onSuccess={fetchBalances} />
           </div>
-        </div>
+        )}
 
       </div>
     </main>
