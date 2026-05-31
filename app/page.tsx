@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { usePlaidLink } from 'react-plaid-link'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 function PlaidLinkButton({ onSuccess, minimal }: { onSuccess: (access_token: string) => void, minimal?: boolean }) {
   const [linkToken, setLinkToken] = useState<string | null>(null)
@@ -75,6 +76,7 @@ export default function Home() {
   const [customNames, setCustomNames] = useState<Record<string, string>>({})
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingValue, setEditingValue] = useState('')
+  const [netWorthHistory, setNetWorthHistory] = useState<{ date: string, value: number }[]>([])
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>
@@ -110,6 +112,18 @@ export default function Home() {
       setUserId(uid)
       await loadCustomNames(uid)
       await loadAllBalances(uid)
+      const { data: history } = await supabase
+        .from('net_worth_history')
+        .select('snapshot_date, net_worth')
+        .eq('user_id', uid)
+        .order('snapshot_date', { ascending: true })
+        .limit(30)
+      if (history) {
+        setNetWorthHistory(history.map(h => ({
+          date: new Date(h.snapshot_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          value: h.net_worth
+        })))
+      }
       setLoading(false)
     })
   }, [])
@@ -155,6 +169,27 @@ export default function Home() {
     const allAccounts = results.flat()
     setAccounts(allAccounts)
     setAccessToken(tokens[0].access_token)
+
+    const nw = allAccounts.reduce((sum, acc) => {
+      const bal = acc.balances.current ?? 0
+      return acc.type === 'credit' ? sum - bal : sum + bal
+    }, 0)
+
+    const today = new Date().toISOString().split('T')[0]
+    const { data: existing } = await supabase
+      .from('net_worth_history')
+      .select('id')
+      .eq('user_id', uid)
+      .eq('snapshot_date', today)
+      .maybeSingle()
+
+    if (!existing) {
+      await supabase.from('net_worth_history').insert({
+        user_id: uid,
+        net_worth: Math.round(nw * 100) / 100,
+        snapshot_date: today,
+      })
+    }
   }
 
   async function handlePlaidSuccess(token: string) {
@@ -203,7 +238,6 @@ export default function Home() {
     <main className="min-h-screen bg-gray-50">
       <div className="max-w-md mx-auto px-4 pb-8">
 
-        {/* Header */}
         <div className="flex justify-between items-center py-6">
           <div>
             <h1 className="text-xl font-semibold text-gray-900">WealthView</h1>
@@ -222,8 +256,6 @@ export default function Home() {
 
         {accounts.length > 0 ? (
           <>
-
-            {/* Net worth hero */}
             <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-3xl p-6 mb-4 text-white">
               <p className="text-blue-200 text-xs mb-1 uppercase tracking-wide">Net worth</p>
               <p className="text-4xl font-semibold mb-4">
@@ -246,7 +278,24 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Accounts by type */}
+            {netWorthHistory.length > 1 && (
+              <div className="bg-white rounded-2xl border border-gray-100 mb-4 p-4">
+                <p className="text-sm font-semibold text-gray-900 mb-3">Net worth over time</p>
+                <ResponsiveContainer width="100%" height={120}>
+                  <LineChart data={netWorthHistory}>
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9ca3af' }} tickLine={false} axisLine={false} />
+                    <YAxis hide domain={['auto', 'auto']} />
+                    <Tooltip
+                      formatter={(value: number) => [`$${value.toLocaleString('en-US', { minimumFractionDigits: 0 })}`, 'Net worth']}
+                      labelStyle={{ fontSize: 11 }}
+                      contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
+                    />
+                    <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
             {[
               { label: 'Checking', filter: (a: any) => a.subtype === 'checking' },
               { label: 'Savings', filter: (a: any) => ['savings', 'money market', 'cd'].includes(a.subtype) },
@@ -317,7 +366,6 @@ export default function Home() {
               <PlaidLinkButton onSuccess={handlePlaidSuccess} minimal />
             </div>
 
-            {/* AI Tips */}
             {tips.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 mb-4 overflow-hidden">
                 <div className="px-4 pt-4 pb-2">
@@ -342,7 +390,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* Actions */}
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => window.location.href = '/transactions'}
