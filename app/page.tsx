@@ -72,6 +72,9 @@ export default function Home() {
   const [userId, setUserId] = useState<string | null>(null)
   const [tips, setTips] = useState<Tip[]>([])
   const [tipsLoading, setTipsLoading] = useState(false)
+  const [customNames, setCustomNames] = useState<Record<string, string>>({})
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingValue, setEditingValue] = useState('')
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>
@@ -105,12 +108,34 @@ export default function Home() {
       }
       const uid = session.user.id
       setUserId(uid)
-await loadAllBalances(uid)
+      await loadCustomNames(uid)
+      await loadAllBalances(uid)
       setLoading(false)
     })
   }, [])
 
-async function fetchBalances(token: string) {
+  async function loadCustomNames(uid: string) {
+    const { data } = await supabase
+      .from('account_names')
+      .select('account_id, custom_name')
+      .eq('user_id', uid)
+    if (data) {
+      const map: Record<string, string> = {}
+      data.forEach(row => { map[row.account_id] = row.custom_name })
+      setCustomNames(map)
+    }
+  }
+
+  async function saveCustomName(accountId: string, name: string) {
+    if (!userId) return
+    await supabase
+      .from('account_names')
+      .upsert({ user_id: userId, account_id: accountId, custom_name: name }, { onConflict: 'account_id' })
+    setCustomNames(prev => ({ ...prev, [accountId]: name }))
+    setEditingId(null)
+  }
+
+  async function fetchBalances(token: string) {
     const res = await fetch('/api/plaid/balances', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -125,22 +150,16 @@ async function fetchBalances(token: string) {
       .from('plaid_tokens')
       .select('access_token')
       .eq('user_id', uid)
-
     if (!tokens || tokens.length === 0) return
-
-    const results = await Promise.all(
-      tokens.map(t => fetchBalances(t.access_token))
-    )
+    const results = await Promise.all(tokens.map(t => fetchBalances(t.access_token)))
     const allAccounts = results.flat()
     setAccounts(allAccounts)
     setAccessToken(tokens[0].access_token)
   }
 
-async function handlePlaidSuccess(token: string) {
+  async function handlePlaidSuccess(token: string) {
     if (!userId) return
-    await supabase
-      .from('plaid_tokens')
-      .insert({ user_id: userId, access_token: token })
+    await supabase.from('plaid_tokens').insert({ user_id: userId, access_token: token })
     await loadAllBalances(userId)
   }
 
@@ -236,16 +255,38 @@ async function handlePlaidSuccess(token: string) {
                 {accounts.map(acc => {
                   const balance = acc.balances.current ?? 0
                   const isCredit = acc.type === 'credit'
+                  const displayName = customNames[acc.account_id] ?? acc.name
+                  const isEditing = editingId === acc.account_id
+
                   return (
                     <div key={acc.account_id} className="flex justify-between items-center px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-2 h-2 rounded-full ${accountColors[acc.type] ?? 'bg-gray-400'}`}></div>
-                        <div>
-                          <p className="text-sm text-gray-800">{acc.name}</p>
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${accountColors[acc.type] ?? 'bg-gray-400'}`}></div>
+                        <div className="flex-1 min-w-0">
+                          {isEditing ? (
+                            <input
+                              autoFocus
+                              value={editingValue}
+                              onChange={e => setEditingValue(e.target.value)}
+                              onBlur={() => saveCustomName(acc.account_id, editingValue)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') saveCustomName(acc.account_id, editingValue)
+                                if (e.key === 'Escape') setEditingId(null)
+                              }}
+                              className="text-sm text-gray-800 border-b border-blue-400 outline-none bg-transparent w-full"
+                            />
+                          ) : (
+                            <p
+                              className="text-sm text-gray-800 truncate cursor-pointer hover:text-blue-600 transition-colors"
+                              onClick={() => { setEditingId(acc.account_id); setEditingValue(displayName) }}
+                            >
+                              {displayName}
+                            </p>
+                          )}
                           <p className="text-xs text-gray-400 capitalize">{acc.type}</p>
                         </div>
                       </div>
-                      <span className={`text-sm font-semibold ${isCredit ? 'text-red-500' : 'text-gray-900'}`}>
+                      <span className={`text-sm font-semibold ml-3 flex-shrink-0 ${isCredit ? 'text-red-500' : 'text-gray-900'}`}>
                         {isCredit ? '-' : ''}${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
@@ -294,7 +335,7 @@ async function handlePlaidSuccess(token: string) {
                 ) : '✦ Get AI insights'}
               </button>
               <button
-               onClick={() => loadAllBalances(userId!)}
+                onClick={() => loadAllBalances(userId!)}
                 className="w-full bg-white border border-gray-200 text-gray-600 rounded-2xl py-3.5 text-sm font-semibold hover:bg-gray-50 transition-colors"
               >
                 Refresh balances
