@@ -345,6 +345,12 @@ export default function Home() {
             {/* Actions */}
             <div className="flex flex-col gap-2">
               <button
+                onClick={() => window.location.href = '/transactions'}
+                className="w-full bg-white border border-gray-200 text-gray-700 rounded-2xl py-3.5 text-sm font-semibold hover:bg-gray-50 transition-colors"
+              >
+                📋 View transactions
+              </button>
+              <button
                 onClick={fetchTips}
                 disabled={tipsLoading}
                 className="w-full bg-violet-600 text-white rounded-2xl py-3.5 text-sm font-semibold hover:bg-violet-700 disabled:opacity-50 transition-colors"
