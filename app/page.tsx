@@ -222,6 +222,7 @@ export default function Home() {
 
         {accounts.length > 0 ? (
           <>
+
             {/* Net worth hero */}
             <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-3xl p-6 mb-4 text-white">
               <p className="text-blue-200 text-xs mb-1 uppercase tracking-wide">Net worth</p>
@@ -245,54 +246,75 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Accounts */}
-            <div className="bg-white rounded-2xl border border-gray-100 mb-4 overflow-hidden">
-              <div className="flex justify-between items-center px-4 pt-4 pb-2">
-                <p className="text-sm font-semibold text-gray-900">Accounts</p>
-                <PlaidLinkButton onSuccess={handlePlaidSuccess} minimal />
-              </div>
-              <div className="divide-y divide-gray-50">
-                {accounts.map(acc => {
-                  const balance = acc.balances.current ?? 0
-                  const isCredit = acc.type === 'credit'
-                  const displayName = customNames[acc.account_id] ?? acc.name
-                  const isEditing = editingId === acc.account_id
-
-                  return (
-                    <div key={acc.account_id} className="flex justify-between items-center px-4 py-3">
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${accountColors[acc.type] ?? 'bg-gray-400'}`}></div>
-                        <div className="flex-1 min-w-0">
-                          {isEditing ? (
-                            <input
-                              autoFocus
-                              value={editingValue}
-                              onChange={e => setEditingValue(e.target.value)}
-                              onBlur={() => saveCustomName(acc.account_id, editingValue)}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter') saveCustomName(acc.account_id, editingValue)
-                                if (e.key === 'Escape') setEditingId(null)
-                              }}
-                              className="text-sm text-gray-800 border-b border-blue-400 outline-none bg-transparent w-full"
-                            />
-                          ) : (
-                            <p
-                              className="text-sm text-gray-800 truncate cursor-pointer hover:text-blue-600 transition-colors"
-                              onClick={() => { setEditingId(acc.account_id); setEditingValue(displayName) }}
-                            >
-                              {displayName}
-                            </p>
-                          )}
-                          <p className="text-xs text-gray-400 capitalize">{acc.type}</p>
+            {/* Accounts by type */}
+            {[
+              { label: 'Checking', filter: (a: any) => a.subtype === 'checking' },
+              { label: 'Savings', filter: (a: any) => ['savings', 'money market', 'cd'].includes(a.subtype) },
+              { label: 'Investments', filter: (a: any) => a.type === 'investment' },
+              { label: 'Credit cards', filter: (a: any) => a.type === 'credit' },
+              { label: 'Other', filter: (a: any) => a.type !== 'investment' && a.type !== 'credit' && !['checking', 'savings', 'money market', 'cd'].includes(a.subtype) },
+            ].map(group => {
+              const groupAccounts = accounts.filter(group.filter)
+              if (groupAccounts.length === 0) return null
+              return (
+                <div key={group.label} className="bg-white rounded-2xl border border-gray-100 mb-3 overflow-hidden">
+                  <div className="px-4 pt-4 pb-2">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{group.label}</p>
+                  </div>
+                  <div className="divide-y divide-gray-50">
+                    {groupAccounts.map(acc => {
+                      const balance = acc.balances.current ?? 0
+                      const isCredit = acc.type === 'credit'
+                      const displayName = customNames[acc.account_id] ?? acc.name
+                      const isEditing = editingId === acc.account_id
+                      return (
+                        <div key={acc.account_id} className="flex justify-between items-center px-4 py-3">
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${accountColors[acc.type] ?? 'bg-gray-400'}`}></div>
+                            <div className="flex-1 min-w-0">
+                              {isEditing ? (
+                                <input
+                                  autoFocus
+                                  value={editingValue}
+                                  onChange={e => setEditingValue(e.target.value)}
+                                  onBlur={() => saveCustomName(acc.account_id, editingValue)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveCustomName(acc.account_id, editingValue)
+                                    if (e.key === 'Escape') setEditingId(null)
+                                  }}
+                                  className="text-sm text-gray-800 border-b border-blue-400 outline-none bg-transparent w-full"
+                                />
+                              ) : (
+                                <p
+                                  className="text-sm text-gray-800 truncate cursor-pointer hover:text-blue-600 transition-colors"
+                                  onClick={() => { setEditingId(acc.account_id); setEditingValue(displayName) }}
+                                >
+                                  {displayName}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <span className={`text-sm font-semibold ml-3 flex-shrink-0 ${isCredit ? 'text-red-500' : 'text-gray-900'}`}>
+                            {isCredit ? '-' : ''}${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
                         </div>
-                      </div>
-                      <span className={`text-sm font-semibold ml-3 flex-shrink-0 ${isCredit ? 'text-red-500' : 'text-gray-900'}`}>
-                        {isCredit ? '-' : ''}${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
+                      )
+                    })}
+                  </div>
+                  <div className="px-4 py-2 border-t border-gray-50 flex justify-between">
+                    <span className="text-xs text-gray-400">Total</span>
+                    <span className="text-xs font-semibold text-gray-600">
+                      {groupAccounts.some(a => a.type === 'credit') ? '-' : ''}$
+                      {groupAccounts.reduce((sum, a) => sum + (a.balances.current ?? 0), 0)
+                        .toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+
+            <div className="flex justify-end mb-4">
+              <PlaidLinkButton onSuccess={handlePlaidSuccess} minimal />
             </div>
 
             {/* AI Tips */}
