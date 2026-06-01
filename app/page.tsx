@@ -2,9 +2,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { usePlaidLink } from 'react-plaid-link'
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { LineChart, Line, XAxis, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts'
 
-function PlaidLinkButton({ onSuccess, minimal }: { onSuccess: (access_token: string) => void, minimal?: boolean }) {
+function PlaidLinkButton({ onSuccess }: { onSuccess: (access_token: string) => void }) {
   const [linkToken, setLinkToken] = useState<string | null>(null)
 
   useEffect(() => {
@@ -23,53 +23,41 @@ function PlaidLinkButton({ onSuccess, minimal }: { onSuccess: (access_token: str
     onSuccess(data.access_token)
   }, [onSuccess])
 
-  const { open, ready } = usePlaidLink({
-    token: linkToken ?? '',
-    onSuccess: onPlaidSuccess,
-  })
-
-  if (minimal) {
-    return (
-      <button
-        onClick={() => open()}
-        disabled={!ready}
-        className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
-      >
-        + Add account
-      </button>
-    )
-  }
+  const { open, ready } = usePlaidLink({ token: linkToken ?? '', onSuccess: onPlaidSuccess })
 
   return (
     <button
       onClick={() => open()}
       disabled={!ready}
-      className="w-full border border-dashed border-gray-300 text-gray-500 rounded-2xl py-4 text-sm hover:border-blue-400 hover:text-blue-600 disabled:opacity-50 transition-colors"
+      style={{ background: 'none', border: 'none', color: '#8B91A0', fontSize: 13, cursor: 'pointer', padding: '8px 0' }}
     >
-      + Connect a bank account
+      + Connect account
     </button>
   )
 }
 
 type Tip = { type: 'warning' | 'good' | 'idea', title: string, body: string }
 
-const tipConfig = {
-  warning: { bg: 'bg-amber-50 border-amber-100', icon: '⚠', iconBg: 'bg-amber-100', iconColor: 'text-amber-600' },
-  good:    { bg: 'bg-green-50 border-green-100',  icon: '✓', iconBg: 'bg-green-100',  iconColor: 'text-green-600' },
-  idea:    { bg: 'bg-blue-50 border-blue-100',    icon: '✦', iconBg: 'bg-blue-100',   iconColor: 'text-blue-600' },
+const accountColors: Record<string, string> = {
+  depository: '#E8F4FE',
+  credit: '#FEF0EE',
+  investment: '#EEF0FF',
+  loan: '#FFF4E6',
+}
+const accountTextColors: Record<string, string> = {
+  depository: '#0B6EC2',
+  credit: '#C0392B',
+  investment: '#4340C4',
+  loan: '#C07A00',
 }
 
-const accountColors: Record<string, string> = {
-  depository: 'bg-blue-500',
-  credit:     'bg-red-400',
-  investment: 'bg-violet-500',
-  loan:       'bg-orange-400',
+function getInitials(name: string) {
+  return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
 }
 
 export default function Home() {
   const [loading, setLoading] = useState(true)
   const [accounts, setAccounts] = useState<any[]>([])
-  const [accessToken, setAccessToken] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [tips, setTips] = useState<Tip[]>([])
   const [tipsLoading, setTipsLoading] = useState(false)
@@ -90,10 +78,7 @@ export default function Home() {
     const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart']
     events.forEach(e => window.addEventListener(e, resetTimer))
     resetTimer()
-    return () => {
-      clearTimeout(timer)
-      events.forEach(e => window.removeEventListener(e, resetTimer))
-    }
+    return () => { clearTimeout(timer); events.forEach(e => window.removeEventListener(e, resetTimer)) }
   }, [])
 
   useEffect(() => {
@@ -104,10 +89,7 @@ export default function Home() {
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) {
-        window.location.href = '/login'
-        return
-      }
+      if (!session) { window.location.href = '/login'; return }
       const uid = session.user.id
       setUserId(uid)
       await loadCustomNames(uid)
@@ -129,10 +111,7 @@ export default function Home() {
   }, [])
 
   async function loadCustomNames(uid: string) {
-    const { data } = await supabase
-      .from('account_names')
-      .select('account_id, custom_name')
-      .eq('user_id', uid)
+    const { data } = await supabase.from('account_names').select('account_id, custom_name').eq('user_id', uid)
     if (data) {
       const map: Record<string, string> = {}
       data.forEach(row => { map[row.account_id] = row.custom_name })
@@ -142,54 +121,31 @@ export default function Home() {
 
   async function saveCustomName(accountId: string, name: string) {
     if (!userId) return
-    await supabase
-      .from('account_names')
-      .upsert({ user_id: userId, account_id: accountId, custom_name: name }, { onConflict: 'account_id' })
+    await supabase.from('account_names').upsert({ user_id: userId, account_id: accountId, custom_name: name }, { onConflict: 'account_id' })
     setCustomNames(prev => ({ ...prev, [accountId]: name }))
     setEditingId(null)
   }
 
   async function fetchBalances(token: string) {
-    const res = await fetch('/api/plaid/balances', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ access_token: token }),
-    })
+    const res = await fetch('/api/plaid/balances', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: token }) })
     const data = await res.json()
     return data.accounts || []
   }
 
   async function loadAllBalances(uid: string) {
-    const { data: tokens } = await supabase
-      .from('plaid_tokens')
-      .select('access_token')
-      .eq('user_id', uid)
+    const { data: tokens } = await supabase.from('plaid_tokens').select('access_token').eq('user_id', uid)
     if (!tokens || tokens.length === 0) return
     const results = await Promise.all(tokens.map(t => fetchBalances(t.access_token)))
     const allAccounts = results.flat()
     setAccounts(allAccounts)
-    setAccessToken(tokens[0].access_token)
 
     const nw = allAccounts.reduce((sum, acc) => {
       const bal = acc.balances.current ?? 0
       return acc.type === 'credit' ? sum - bal : sum + bal
     }, 0)
-
     const today = new Date().toISOString().split('T')[0]
-    const { data: existing } = await supabase
-      .from('net_worth_history')
-      .select('id')
-      .eq('user_id', uid)
-      .eq('snapshot_date', today)
-      .maybeSingle()
-
-    if (!existing) {
-      await supabase.from('net_worth_history').insert({
-        user_id: uid,
-        net_worth: Math.round(nw * 100) / 100,
-        snapshot_date: today,
-      })
-    }
+    const { data: existing } = await supabase.from('net_worth_history').select('id').eq('user_id', uid).eq('snapshot_date', today).maybeSingle()
+    if (!existing) await supabase.from('net_worth_history').insert({ user_id: uid, net_worth: Math.round(nw * 100) / 100, snapshot_date: today })
   }
 
   async function handlePlaidSuccess(token: string) {
@@ -200,32 +156,17 @@ export default function Home() {
 
   async function fetchTips() {
     setTipsLoading(true)
-    const { data: tokens } = await supabase
-      .from('plaid_tokens')
-      .select('access_token')
-      .eq('user_id', userId!)
-
+    const { data: tokens } = await supabase.from('plaid_tokens').select('access_token').eq('user_id', userId!)
     let allTransactions: any[] = []
     if (tokens && tokens.length > 0) {
-      const results = await Promise.all(
-        tokens.map(async t => {
-          const res = await fetch('/api/plaid/transactions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ access_token: t.access_token }),
-          })
-          const data = await res.json()
-          return data.transactions || []
-        })
-      )
+      const results = await Promise.all(tokens.map(async t => {
+        const res = await fetch('/api/plaid/transactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: t.access_token }) })
+        const data = await res.json()
+        return data.transactions || []
+      }))
       allTransactions = results.flat()
     }
-
-    const res = await fetch('/api/ai-tips', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accounts, transactions: allTransactions }),
-    })
+    const res = await fetch('/api/ai-tips', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accounts, transactions: allTransactions }) })
     const data = await res.json()
     setTips(data.tips || [])
     setTipsLoading(false)
@@ -235,174 +176,161 @@ export default function Home() {
     const bal = acc.balances.current ?? 0
     return acc.type === 'credit' ? sum - bal : sum + bal
   }, 0)
+  const totalAssets = accounts.filter(a => a.type !== 'credit' && a.type !== 'loan').reduce((sum, a) => sum + (a.balances.current ?? 0), 0)
+  const totalDebt = accounts.filter(a => a.type === 'credit' || a.type === 'loan').reduce((sum, a) => sum + (a.balances.current ?? 0), 0)
 
-  const totalAssets = accounts
-    .filter(a => a.type !== 'credit' && a.type !== 'loan')
-    .reduce((sum, a) => sum + (a.balances.current ?? 0), 0)
-
-  const totalDebt = accounts
-    .filter(a => a.type === 'credit' || a.type === 'loan')
-    .reduce((sum, a) => sum + (a.balances.current ?? 0), 0)
+  const groups = [
+    { label: 'Checking', filter: (a: any) => a.subtype === 'checking' },
+    { label: 'Savings', filter: (a: any) => ['savings', 'money market', 'cd'].includes(a.subtype) },
+    { label: 'Investments', filter: (a: any) => a.type === 'investment' },
+    { label: 'Credit cards', filter: (a: any) => a.type === 'credit' },
+    { label: 'Other', filter: (a: any) => a.type !== 'investment' && a.type !== 'credit' && !['checking', 'savings', 'money market', 'cd'].includes(a.subtype) },
+  ]
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-gray-400 text-sm">Loading your dashboard...</p>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F0F2F5' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 28, height: 28, border: '2px solid #0B1F44', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <p style={{ color: '#8B91A0', fontSize: 13 }}>Loading your dashboard...</p>
         </div>
-      </main>
+      </div>
     )
   }
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <div className="max-w-md mx-auto px-4 pb-8">
+    <div style={{ minHeight: '100vh', background: '#F0F2F5', paddingBottom: 72 }}>
+      <div style={{ maxWidth: 480, margin: '0 auto', padding: '0 20px' }}>
 
-        <div className="flex justify-between items-center py-6">
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">WealthView</h1>
-            <p className="text-xs text-gray-400 mt-0.5">Good evening, Anthony</p>
-          </div>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 24, paddingBottom: 20 }}>
+          <div style={{ fontSize: 18, fontWeight: 600, color: '#0B1F44' }}>WealthView</div>
           <button
-            onClick={async () => {
-              await supabase.auth.signOut()
-              window.location.href = '/login'
-            }}
-            className="text-xs text-gray-400 hover:text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-1.5"
+            onClick={async () => { await supabase.auth.signOut(); window.location.href = '/login' }}
+            style={{ width: 34, height: 34, borderRadius: '50%', background: '#0B1F44', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
-            Sign out
+            A
           </button>
         </div>
 
         {accounts.length > 0 ? (
           <>
-            <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-3xl p-6 mb-4 text-white">
-              <p className="text-blue-200 text-xs mb-1 uppercase tracking-wide">Net worth</p>
-              <p className="text-4xl font-semibold mb-4">
-                ${netWorth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-              <div className="flex gap-4">
-                <div>
-                  <p className="text-blue-200 text-xs mb-0.5">Assets</p>
-                  <p className="text-white font-semibold text-sm">
-                    ${totalAssets.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                  </p>
-                </div>
-                <div className="w-px bg-blue-500"></div>
-                <div>
-                  <p className="text-blue-200 text-xs mb-0.5">Debt</p>
-                  <p className="text-white font-semibold text-sm">
-                    ${totalDebt.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                  </p>
-                </div>
+            {/* Net worth hero */}
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontSize: 12, color: '#8B91A0', marginBottom: 4 }}>Total net worth</div>
+              <div style={{ fontSize: 42, fontWeight: 600, color: '#0B1F44', lineHeight: 1 }}>
+                ${netWorth.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </div>
+              <div style={{ fontSize: 12, color: '#2D8C56', marginTop: 6 }}>↑ Growing over time</div>
             </div>
 
+            {/* Chart */}
             {netWorthHistory.length > 1 && (
-              <div className="bg-white rounded-2xl border border-gray-100 mb-4 p-4">
-                <p className="text-sm font-semibold text-gray-900 mb-3">Net worth over time</p>
-                <ResponsiveContainer width="100%" height={120}>
-                  <LineChart data={netWorthHistory}>
-                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9ca3af' }} tickLine={false} axisLine={false} />
-                    <YAxis hide domain={['auto', 'auto']} />
+              <div style={{ marginBottom: 24 }}>
+                <ResponsiveContainer width="100%" height={80}>
+                  <AreaChart data={netWorthHistory} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#0B1F44" stopOpacity={0.15} />
+                        <stop offset="100%" stopColor="#0B1F44" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#B0B4BC' }} tickLine={false} axisLine={false} />
                     <Tooltip
                       formatter={(value: any) => value == null ? ['', ''] : [`$${Number(value).toLocaleString('en-US', { minimumFractionDigits: 0 })}`, 'Net worth']}
-                      labelStyle={{ fontSize: 11 }}
-                      contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
+                      contentStyle={{ fontSize: 12, borderRadius: 8, border: '0.5px solid #E4E6EA', boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}
                     />
-                    <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={2} dot={false} />
-                  </LineChart>
+                    <Area type="monotone" dataKey="value" stroke="#0B1F44" strokeWidth={2} fill="url(#nwGrad)" dot={false} activeDot={{ r: 4, fill: '#0B1F44' }} />
+                  </AreaChart>
                 </ResponsiveContainer>
               </div>
             )}
 
-            {[
-              { label: 'Checking', filter: (a: any) => a.subtype === 'checking' },
-              { label: 'Savings', filter: (a: any) => ['savings', 'money market', 'cd'].includes(a.subtype) },
-              { label: 'Investments', filter: (a: any) => a.type === 'investment' },
-              { label: 'Credit cards', filter: (a: any) => a.type === 'credit' },
-              { label: 'Other', filter: (a: any) => a.type !== 'investment' && a.type !== 'credit' && !['checking', 'savings', 'money market', 'cd'].includes(a.subtype) },
-            ].map(group => {
-              const groupAccounts = accounts.filter(group.filter)
-              if (groupAccounts.length === 0) return null
-              return (
-                <div key={group.label} className="bg-white rounded-2xl border border-gray-100 mb-3 overflow-hidden">
-                  <div className="px-4 pt-4 pb-2">
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{group.label}</p>
-                  </div>
-                  <div className="divide-y divide-gray-50">
-                    {groupAccounts.map(acc => {
+            {/* Stats row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 28 }}>
+              <div style={{ background: '#fff', borderRadius: 12, padding: '12px 14px', boxShadow: '0 4px 16px rgba(0,0,0,0.05)' }}>
+                <div style={{ fontSize: 11, color: '#8B91A0', marginBottom: 4 }}>Assets</div>
+                <div style={{ fontSize: 18, fontWeight: 600, color: '#0B1F44' }}>${totalAssets.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+              </div>
+              <div style={{ background: '#fff', borderRadius: 12, padding: '12px 14px', boxShadow: '0 4px 16px rgba(0,0,0,0.05)' }}>
+                <div style={{ fontSize: 11, color: '#8B91A0', marginBottom: 4 }}>Debt</div>
+                <div style={{ fontSize: 18, fontWeight: 600, color: '#C0392B' }}>${totalDebt.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+              </div>
+            </div>
+
+            {/* Accounts */}
+            <div style={{ marginBottom: 28 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1F44', marginBottom: 14 }}>Accounts</div>
+              {groups.map(group => {
+                const groupAccounts = accounts.filter(group.filter)
+                if (groupAccounts.length === 0) return null
+                return (
+                  <div key={group.label} style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 11, color: '#B0B4BC', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>{group.label}</div>
+                    {groupAccounts.map((acc, i) => {
                       const balance = acc.balances.current ?? 0
                       const isCredit = acc.type === 'credit'
                       const displayName = customNames[acc.account_id] ?? acc.name
                       const isEditing = editingId === acc.account_id
+                      const bg = accountColors[acc.type] ?? '#F0F2F5'
+                      const tc = accountTextColors[acc.type] ?? '#0B1F44'
                       return (
-                        <div key={acc.account_id} className="flex justify-between items-center px-4 py-3">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${accountColors[acc.type] ?? 'bg-gray-400'}`}></div>
-                            <div className="flex-1 min-w-0">
+                        <div key={acc.account_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < groupAccounts.length - 1 ? '0.5px solid #E8EAF0' : 'none' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                            <div style={{ width: 34, height: 34, borderRadius: 8, background: bg, color: tc, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
+                              {getInitials(displayName)}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
                               {isEditing ? (
                                 <input
                                   autoFocus
                                   value={editingValue}
                                   onChange={e => setEditingValue(e.target.value)}
                                   onBlur={() => saveCustomName(acc.account_id, editingValue)}
-                                  onKeyDown={e => {
-                                    if (e.key === 'Enter') saveCustomName(acc.account_id, editingValue)
-                                    if (e.key === 'Escape') setEditingId(null)
-                                  }}
-                                  className="text-sm text-gray-800 border-b border-blue-400 outline-none bg-transparent w-full"
+                                  onKeyDown={e => { if (e.key === 'Enter') saveCustomName(acc.account_id, editingValue); if (e.key === 'Escape') setEditingId(null) }}
+                                  style={{ fontSize: 13, fontWeight: 500, color: '#0B1F44', border: 'none', borderBottom: '1px solid #378ADD', outline: 'none', background: 'transparent', width: '100%', fontFamily: 'inherit' }}
                                 />
                               ) : (
-                                <p
-                                  className="text-sm text-gray-800 truncate cursor-pointer hover:text-blue-600 transition-colors"
+                                <div
+                                  style={{ fontSize: 13, fontWeight: 500, color: '#0B1F44', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                                   onClick={() => { setEditingId(acc.account_id); setEditingValue(displayName) }}
                                 >
                                   {displayName}
-                                </p>
+                                </div>
                               )}
                             </div>
                           </div>
-                          <span className={`text-sm font-semibold ml-3 flex-shrink-0 ${isCredit ? 'text-red-500' : 'text-gray-900'}`}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: isCredit ? '#C0392B' : '#0B1F44', marginLeft: 12, flexShrink: 0 }}>
                             {isCredit ? '-' : ''}${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
+                          </div>
                         </div>
                       )
                     })}
                   </div>
-                  <div className="px-4 py-2 border-t border-gray-50 flex justify-between">
-                    <span className="text-xs text-gray-400">Total</span>
-                    <span className="text-xs font-semibold text-gray-600">
-                      {groupAccounts.some(a => a.type === 'credit') ? '-' : ''}$
-                      {groupAccounts.reduce((sum, a) => sum + (a.balances.current ?? 0), 0)
-                        .toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
-
-            <div className="flex justify-end mb-4">
-              <PlaidLinkButton onSuccess={handlePlaidSuccess} minimal />
+                )
+              })}
+              <PlaidLinkButton onSuccess={handlePlaidSuccess} />
             </div>
 
+            {/* AI Tips */}
             {tips.length > 0 && (
-              <div className="bg-white rounded-2xl border border-gray-100 mb-4 overflow-hidden">
-                <div className="px-4 pt-4 pb-2">
-                  <p className="text-sm font-semibold text-gray-900">AI insights</p>
-                </div>
-                <div className="flex flex-col gap-2 px-4 pb-4">
+              <div style={{ marginBottom: 28 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1F44', marginBottom: 14 }}>AI insights</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {tips.map((tip, i) => {
-                    const config = tipConfig[tip.type] ?? tipConfig.idea
+                    const styles = {
+                      warning: { bg: '#FEF0EE', icon: '⚠', iconBg: '#FDDDD8', iconColor: '#C0392B' },
+                      good:    { bg: '#EBF7F0', icon: '✓', iconBg: '#C8EDD9', iconColor: '#2D8C56' },
+                      idea:    { bg: '#EEF4FF', icon: '✦', iconBg: '#D6E4FF', iconColor: '#3B5BDB' },
+                    }
+                    const s = styles[tip.type] ?? styles.idea
                     return (
-                      <div key={i} className={`${config.bg} border rounded-xl p-3 flex gap-3`}>
-                        <div className={`${config.iconBg} ${config.iconColor} w-7 h-7 rounded-full flex items-center justify-center text-sm flex-shrink-0 mt-0.5`}>
-                          {config.icon}
-                        </div>
+                      <div key={i} style={{ background: s.bg, borderRadius: 12, padding: '12px 14px', display: 'flex', gap: 10 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: s.iconBg, color: s.iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}>{s.icon}</div>
                         <div>
-                          <p className="text-sm font-semibold text-gray-900">{tip.title}</p>
-                          <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{tip.body}</p>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#0B1F44', marginBottom: 2 }}>{tip.title}</div>
+                          <div style={{ fontSize: 11, color: '#5A6070', lineHeight: 1.5 }}>{tip.body}</div>
                         </div>
                       </div>
                     )
@@ -411,57 +339,49 @@ export default function Home() {
               </div>
             )}
 
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={() => window.location.href = '/transactions'}
-                className="w-full bg-white border border-gray-200 text-gray-700 rounded-2xl py-3.5 text-sm font-semibold hover:bg-gray-50 transition-colors"
-              >
-                📋 View transactions
-              </button>
-              <button
-                onClick={() => window.location.href = '/budget'}
-                className="w-full bg-white border border-gray-200 text-gray-700 rounded-2xl py-3.5 text-sm font-semibold hover:bg-gray-50 transition-colors"
-              >
-                🎯 Budget tracker
-              </button>
-              <button
-                onClick={() => window.location.href = '/subscriptions'}
-                className="w-full bg-white border border-gray-200 text-gray-700 rounded-2xl py-3.5 text-sm font-semibold hover:bg-gray-50 transition-colors"
-              >
-                🔍 Subscriptions detector
-              </button>
-              <button
-                onClick={fetchTips}
-                disabled={tipsLoading}
-                className="w-full bg-violet-600 text-white rounded-2xl py-3.5 text-sm font-semibold hover:bg-violet-700 disabled:opacity-50 transition-colors"
-              >
-                {tipsLoading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                    Analyzing...
-                  </span>
-                ) : '✦ Get AI insights'}
-              </button>
-              <button
-                onClick={() => loadAllBalances(userId!)}
-                className="w-full bg-white border border-gray-200 text-gray-600 rounded-2xl py-3.5 text-sm font-semibold hover:bg-gray-50 transition-colors"
-              >
-                Refresh balances
-              </button>
-            </div>
+            {/* Actions */}
+            <button
+              onClick={fetchTips}
+              disabled={tipsLoading}
+              style={{ width: '100%', background: '#0B1F44', color: '#fff', border: 'none', borderRadius: 14, padding: '15px', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: tipsLoading ? 0.6 : 1, fontFamily: 'inherit', marginBottom: 10 }}
+            >
+              {tipsLoading ? 'Analyzing...' : '✦ Get AI insights'}
+            </button>
+            <button
+              onClick={() => loadAllBalances(userId!)}
+              style={{ width: '100%', background: '#fff', color: '#8B91A0', border: 'none', borderRadius: 14, padding: '15px', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}
+            >
+              Refresh balances
+            </button>
           </>
         ) : (
-          <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center">
-            <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-2xl">
-              🏦
-            </div>
-            <p className="text-gray-900 font-semibold mb-1">Connect your accounts</p>
-            <p className="text-gray-400 text-sm mb-6">Link your banks to see your complete financial picture</p>
+          <div style={{ background: '#fff', borderRadius: 20, padding: 32, textAlign: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>🏦</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: '#0B1F44', marginBottom: 6 }}>Connect your accounts</div>
+            <div style={{ fontSize: 12, color: '#8B91A0', marginBottom: 20 }}>Link your banks to see your complete financial picture</div>
             <PlaidLinkButton onSuccess={handlePlaidSuccess} />
           </div>
         )}
 
       </div>
-    </main>
+
+      {/* Bottom nav */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#fff', borderTop: '0.5px solid #E4E6EA', padding: '10px 0 14px', display: 'flex', justifyContent: 'space-around', boxShadow: '0 -4px 20px rgba(0,0,0,0.06)', zIndex: 50 }}>
+        {[
+          { label: 'Home', icon: 'ti-layout-dashboard', href: '/' },
+          { label: 'Transactions', icon: 'ti-receipt', href: '/transactions' },
+          { label: 'Budget', icon: 'ti-target', href: '/budget' },
+          { label: 'Subscriptions', icon: 'ti-repeat', href: '/subscriptions' },
+        ].map(item => {
+          const active = typeof window !== 'undefined' && window.location.pathname === item.href
+          return (
+            <button key={item.href} onClick={() => window.location.href = item.href} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '0 12px', fontFamily: 'inherit' }}>
+              <i className={`ti ${item.icon}`} style={{ fontSize: 22, color: active ? '#0B1F44' : '#B0B4BC' }} aria-hidden="true" />
+              <span style={{ fontSize: 10, color: active ? '#0B1F44' : '#B0B4BC', fontWeight: active ? 600 : 400 }}>{item.label}</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
   )
 }

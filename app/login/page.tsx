@@ -21,66 +21,59 @@ export default function Login() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
+    <div style={{ minHeight: '100vh', background: '#F0F2F5', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ width: '100%', maxWidth: 360 }}>
 
-        <div className="text-center mb-8">
-          <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <span className="text-white text-2xl">✦</span>
-          </div>
-          <h1 className="text-2xl font-semibold text-gray-900">WealthView</h1>
-          <p className="text-sm text-gray-400 mt-1">Your personal finance dashboard</p>
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div style={{ width: 52, height: 52, borderRadius: 16, background: '#0B1F44', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 22, color: '#fff' }}>✦</div>
+          <div style={{ fontSize: 22, fontWeight: 600, color: '#0B1F44' }}>WealthView</div>
+          <div style={{ fontSize: 13, color: '#8B91A0', marginTop: 4 }}>Your personal finance dashboard</div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-100 p-6">
-          <div className="flex flex-col gap-3">
-            <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Email</label>
-              <input
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Password</label>
-              <input
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
-              />
-            </div>
-            {error && (
-              <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3">
-                <p className="text-red-600 text-sm">{error}</p>
-              </div>
-            )}
-            <button
-              onClick={handleLogin}
-              disabled={loading}
-              className="w-full bg-blue-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-colors mt-1"
-            >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                  Signing in...
-                </span>
-              ) : 'Sign in'}
-            </button>
+        <div style={{ background: '#fff', borderRadius: 20, padding: 24, boxShadow: '0 4px 24px rgba(0,0,0,0.07)' }}>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 500, color: '#8B91A0', marginBottom: 6 }}>Email</div>
+            <input
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
+              style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '0.5px solid #E4E6EA', fontSize: 13, outline: 'none', fontFamily: 'inherit', color: '#0B1F44', background: '#F8F9FB' }}
+            />
           </div>
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 11, fontWeight: 500, color: '#8B91A0', marginBottom: 6 }}>Password</div>
+            <input
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
+              style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '0.5px solid #E4E6EA', fontSize: 13, outline: 'none', fontFamily: 'inherit', color: '#0B1F44', background: '#F8F9FB' }}
+            />
+          </div>
+          {error && (
+            <div style={{ background: '#FEF0EE', borderRadius: 8, padding: '10px 12px', marginBottom: 16, fontSize: 12, color: '#C0392B' }}>
+              {error}
+            </div>
+          )}
+          <button
+            onClick={handleLogin}
+            disabled={loading}
+            style={{ width: '100%', background: '#0B1F44', color: '#fff', border: 'none', borderRadius: 12, padding: '14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: loading ? 0.6 : 1, fontFamily: 'inherit' }}
+          >
+            {loading ? (
+              'Signing in...'
+            ) : 'Sign in'}
+          </button>
         </div>
 
-        <p className="text-center text-xs text-gray-300 mt-6">
+        <div style={{ textAlign: 'center', fontSize: 11, color: '#C0C4CC', marginTop: 20 }}>
           Private & secure · Only you have access
-        </p>
+        </div>
 
       </div>
-    </main>
+    </div>
   )
 }
