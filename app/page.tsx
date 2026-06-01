@@ -286,7 +286,7 @@ export default function Home() {
                     <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9ca3af' }} tickLine={false} axisLine={false} />
                     <YAxis hide domain={['auto', 'auto']} />
                     <Tooltip
-                      formatter={(value: number) => [`$${value.toLocaleString('en-US', { minimumFractionDigits: 0 })}`, 'Net worth']}
+                      formatter={(value: any) => value == null ? ['', ''] : [`$${Number(value).toLocaleString('en-US', { minimumFractionDigits: 0 })}`, 'Net worth']}
                       labelStyle={{ fontSize: 11 }}
                       contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
                     />
