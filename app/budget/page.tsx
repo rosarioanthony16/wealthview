@@ -16,6 +16,7 @@ const CATEGORIES = [
 type Budget = { category: string, amount: number }
 type Transaction = {
   amount: number
+  date: string
   personal_finance_category: { primary: string } | null
   pending: boolean
 }
