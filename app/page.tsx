@@ -398,6 +398,12 @@ export default function Home() {
                 📋 View transactions
               </button>
               <button
+                onClick={() => window.location.href = '/budget'}
+                className="w-full bg-white border border-gray-200 text-gray-700 rounded-2xl py-3.5 text-sm font-semibold hover:bg-gray-50 transition-colors"
+              >
+                🎯 Budget tracker
+              </button>
+              <button
                 onClick={fetchTips}
                 disabled={tipsLoading}
                 className="w-full bg-violet-600 text-white rounded-2xl py-3.5 text-sm font-semibold hover:bg-violet-700 disabled:opacity-50 transition-colors"
