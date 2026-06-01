@@ -200,10 +200,31 @@ export default function Home() {
 
   async function fetchTips() {
     setTipsLoading(true)
+    const { data: tokens } = await supabase
+      .from('plaid_tokens')
+      .select('access_token')
+      .eq('user_id', userId!)
+
+    let allTransactions: any[] = []
+    if (tokens && tokens.length > 0) {
+      const results = await Promise.all(
+        tokens.map(async t => {
+          const res = await fetch('/api/plaid/transactions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ access_token: t.access_token }),
+          })
+          const data = await res.json()
+          return data.transactions || []
+        })
+      )
+      allTransactions = results.flat()
+    }
+
     const res = await fetch('/api/ai-tips', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accounts }),
+      body: JSON.stringify({ accounts, transactions: allTransactions }),
     })
     const data = await res.json()
     setTips(data.tips || [])
