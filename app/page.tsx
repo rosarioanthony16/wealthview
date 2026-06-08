@@ -334,9 +334,9 @@ export default function Home() {
                   <BarChart data={cashFlowData} barGap={3} barSize={14} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
                     <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#B0B4BC' }} tickLine={false} axisLine={false} />
                     <Tooltip
-                      formatter={(value: any, name?: string) => [
-                        `$${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
-                        name ?? ''
+                      formatter={(value: any, name?: any) => [
+                        `$${Number(value).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
+                        String(name ?? '')
                       ]}
                       contentStyle={{ fontSize: 12, borderRadius: 8, border: '0.5px solid #E4E6EA', boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}
                       cursor={{ fill: 'rgba(0,0,0,0.03)' }}
