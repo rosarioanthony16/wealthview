@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
 type RawTx = {
@@ -84,6 +84,7 @@ export default function Subscriptions() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
   const [userInitial, setUserInitial]     = useState('A')
   const pathname = usePathname()
+  const router   = useRouter()
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>
@@ -91,7 +92,7 @@ export default function Subscriptions() {
       clearTimeout(timer)
       timer = setTimeout(async () => {
         await supabase.auth.signOut()
-        window.location.href = '/login'
+        router.push('/login')
       }, 15 * 60 * 1000)
     }
     const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart']
@@ -108,7 +109,7 @@ export default function Subscriptions() {
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) { window.location.href = '/login'; return }
+      if (!session) { router.push('/login'); return }
       setUserInitial((session.user.email?.[0] ?? 'A').toUpperCase())
       const uid = session.user.id
       const { data: tokens } = await supabase
@@ -155,7 +156,7 @@ export default function Subscriptions() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 24, paddingBottom: 20 }}>
           <div style={{ fontSize: 18, fontWeight: 600, color: '#0B1F44' }}>WealthView</div>
           <button
-            onClick={async () => { await supabase.auth.signOut(); window.location.href = '/login' }}
+            onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}
             style={{ width: 34, height: 34, borderRadius: '50%', background: '#0B1F44', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             {userInitial}
@@ -236,7 +237,7 @@ export default function Subscriptions() {
         ].map(item => {
           const active = pathname === item.href
           return (
-            <button key={item.href} onClick={() => window.location.href = item.href} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '0 12px', fontFamily: 'inherit' }}>
+            <button key={item.href} onClick={() => router.push(item.href)} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '0 12px', fontFamily: 'inherit' }}>
               <i className={`ti ${item.icon}`} style={{ fontSize: 22, color: active ? '#0B1F44' : '#B0B4BC' }} aria-hidden="true" />
               <span style={{ fontSize: 10, color: active ? '#0B1F44' : '#B0B4BC', fontWeight: active ? 600 : 400 }}>{item.label}</span>
             </button>
