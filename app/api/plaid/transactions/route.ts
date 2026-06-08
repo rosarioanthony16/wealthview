@@ -15,14 +15,19 @@ const plaidClient = new PlaidApi(config)
 
 export async function POST(request: Request) {
   try {
-    const { access_token } = await request.json()
+    const { access_token, start_date } = await request.json()
 
     const now = new Date()
-    const start = new Date()
-    start.setDate(now.getDate() - 90)
-
-    const startDate = start.toISOString().split('T')[0]
     const endDate = now.toISOString().split('T')[0]
+
+    let startDate: string
+    if (start_date) {
+      startDate = start_date
+    } else {
+      const start = new Date()
+      start.setDate(now.getDate() - 90)
+      startDate = start.toISOString().split('T')[0]
+    }
 
     const response = await plaidClient.transactionsGet({
       access_token,

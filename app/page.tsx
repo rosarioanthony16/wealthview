@@ -1,8 +1,9 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
+import { usePathname } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 import { usePlaidLink } from 'react-plaid-link'
-import { LineChart, Line, XAxis, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts'
+import { LineChart, Line, XAxis, Tooltip, ResponsiveContainer, Area, AreaChart, BarChart, Bar } from 'recharts'
 
 function PlaidLinkButton({ onSuccess }: { onSuccess: (access_token: string) => void }) {
   const [linkToken, setLinkToken] = useState<string | null>(null)
@@ -65,6 +66,9 @@ export default function Home() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingValue, setEditingValue] = useState('')
   const [netWorthHistory, setNetWorthHistory] = useState<{ date: string, value: number }[]>([])
+  const [cashFlowData, setCashFlowData] = useState<{ month: string, income: number, expenses: number }[]>([])
+  const [userInitial, setUserInitial] = useState('A')
+  const pathname = usePathname()
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>
@@ -92,8 +96,8 @@ export default function Home() {
       if (!session) { window.location.href = '/login'; return }
       const uid = session.user.id
       setUserId(uid)
-      await loadCustomNames(uid)
-      await loadAllBalances(uid)
+      setUserInitial((session.user.email?.[0] ?? 'A').toUpperCase())
+      await Promise.all([loadCustomNames(uid), loadAllBalances(uid), fetchCashFlow(uid)])
       const { data: history } = await supabase
         .from('net_worth_history')
         .select('snapshot_date, net_worth')
@@ -107,7 +111,7 @@ export default function Home() {
         })))
       }
       setLoading(false)
-    })
+    }).catch(err => { console.error(err); setLoading(false) })
   }, [])
 
   async function loadCustomNames(uid: string) {
@@ -127,9 +131,12 @@ export default function Home() {
   }
 
   async function fetchBalances(token: string) {
-    const res = await fetch('/api/plaid/balances', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: token }) })
-    const data = await res.json()
-    return data.accounts || []
+    try {
+      const res = await fetch('/api/plaid/balances', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: token }) })
+      if (!res.ok) return []
+      const data = await res.json()
+      return data.accounts || []
+    } catch { return [] }
   }
 
   async function loadAllBalances(uid: string) {
@@ -148,6 +155,61 @@ export default function Home() {
     if (!existing) await supabase.from('net_worth_history').insert({ user_id: uid, net_worth: Math.round(nw * 100) / 100, snapshot_date: today })
   }
 
+  async function fetchCashFlow(uid: string) {
+    try {
+      const { data: tokens } = await supabase.from('plaid_tokens').select('access_token').eq('user_id', uid)
+      if (!tokens || tokens.length === 0) return
+
+      const now = new Date()
+      const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1)
+      const startDate = sixMonthsAgo.toISOString().split('T')[0]
+
+      const results = await Promise.all(tokens.map(async t => {
+        try {
+          const res = await fetch('/api/plaid/transactions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ access_token: t.access_token, start_date: startDate }),
+          })
+          if (!res.ok) return []
+          const data = await res.json()
+          return data.transactions || []
+        } catch { return [] }
+      }))
+      const allTx = results.flat()
+
+      const months: { month: string, income: number, expenses: number }[] = []
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+        months.push({
+          month: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+          income: 0,
+          expenses: 0,
+        })
+      }
+
+      allTx.forEach((tx: any) => {
+        if (!tx.date) return
+        const txDate = new Date(tx.date + 'T00:00:00')
+        const txKey = txDate.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+        const bucket = months.find(m => m.month === txKey)
+        if (!bucket) return
+        const amt = tx.amount
+        if (amt > 0) bucket.income += amt
+        else bucket.expenses += Math.abs(amt)
+      })
+
+      months.forEach(m => {
+        m.income = Math.round(m.income)
+        m.expenses = Math.round(m.expenses)
+      })
+
+      setCashFlowData(months)
+    } catch (err) {
+      console.error('Failed to fetch cash flow:', err)
+    }
+  }
+
   async function handlePlaidSuccess(token: string) {
     if (!userId) return
     await supabase.from('plaid_tokens').insert({ user_id: userId, access_token: token })
@@ -156,20 +218,30 @@ export default function Home() {
 
   async function fetchTips() {
     setTipsLoading(true)
-    const { data: tokens } = await supabase.from('plaid_tokens').select('access_token').eq('user_id', userId!)
-    let allTransactions: any[] = []
-    if (tokens && tokens.length > 0) {
-      const results = await Promise.all(tokens.map(async t => {
-        const res = await fetch('/api/plaid/transactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: t.access_token }) })
+    try {
+      const { data: tokens } = await supabase.from('plaid_tokens').select('access_token').eq('user_id', userId!)
+      let allTransactions: any[] = []
+      if (tokens && tokens.length > 0) {
+        const results = await Promise.all(tokens.map(async t => {
+          try {
+            const res = await fetch('/api/plaid/transactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: t.access_token }) })
+            if (!res.ok) return []
+            const data = await res.json()
+            return data.transactions || []
+          } catch { return [] }
+        }))
+        allTransactions = results.flat()
+      }
+      const res = await fetch('/api/ai-tips', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accounts, transactions: allTransactions }) })
+      if (res.ok) {
         const data = await res.json()
-        return data.transactions || []
-      }))
-      allTransactions = results.flat()
+        setTips(data.tips || [])
+      }
+    } catch (err) {
+      console.error('Failed to fetch tips:', err)
+    } finally {
+      setTipsLoading(false)
     }
-    const res = await fetch('/api/ai-tips', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accounts, transactions: allTransactions }) })
-    const data = await res.json()
-    setTips(data.tips || [])
-    setTipsLoading(false)
   }
 
   const netWorth = accounts.reduce((sum, acc) => {
@@ -178,6 +250,9 @@ export default function Home() {
   }, 0)
   const totalAssets = accounts.filter(a => a.type !== 'credit' && a.type !== 'loan').reduce((sum, a) => sum + (a.balances.current ?? 0), 0)
   const totalDebt = accounts.filter(a => a.type === 'credit' || a.type === 'loan').reduce((sum, a) => sum + (a.balances.current ?? 0), 0)
+  const nwDelta = netWorthHistory.length >= 2
+    ? netWorthHistory[netWorthHistory.length - 1].value - netWorthHistory[netWorthHistory.length - 2].value
+    : null
 
   const groups = [
     { label: 'Checking', filter: (a: any) => a.subtype === 'checking' },
@@ -210,7 +285,7 @@ export default function Home() {
             onClick={async () => { await supabase.auth.signOut(); window.location.href = '/login' }}
             style={{ width: 34, height: 34, borderRadius: '50%', background: '#0B1F44', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
-            A
+            {userInitial}
           </button>
         </div>
 
@@ -218,11 +293,15 @@ export default function Home() {
           <>
             {/* Net worth hero */}
             <div style={{ marginBottom: 24 }}>
-              <div style={{ fontSize: 12, color: '#8B91A0', marginBottom: 4 }}>Total net worth</div>
+              <div style={{ fontSize: 11, color: '#8B91A0', marginBottom: 4 }}>Total net worth</div>
               <div style={{ fontSize: 42, fontWeight: 600, color: '#0B1F44', lineHeight: 1 }}>
                 ${netWorth.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </div>
-              <div style={{ fontSize: 12, color: '#2D8C56', marginTop: 6 }}>↑ Growing over time</div>
+              {nwDelta !== null && (
+                <div style={{ fontSize: 12, color: nwDelta >= 0 ? '#2D8C56' : '#C0392B', marginTop: 4 }}>
+                  {nwDelta >= 0 ? '↑' : '↓'} {nwDelta >= 0 ? '+' : '-'}${Math.abs(nwDelta).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                </div>
+              )}
             </div>
 
             {/* Chart */}
@@ -244,6 +323,38 @@ export default function Home() {
                     <Area type="monotone" dataKey="value" stroke="#0B1F44" strokeWidth={2} fill="url(#nwGrad)" dot={false} activeDot={{ r: 4, fill: '#0B1F44' }} />
                   </AreaChart>
                 </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Cash flow chart */}
+            {cashFlowData.some(m => m.income > 0 || m.expenses > 0) && (
+              <div style={{ background: '#fff', borderRadius: 12, padding: '14px', boxShadow: '0 4px 16px rgba(0,0,0,0.05)', marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1F44', marginBottom: 12 }}>Cash flow</div>
+                <ResponsiveContainer width="100%" height={160}>
+                  <BarChart data={cashFlowData} barGap={3} barSize={14} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                    <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#B0B4BC' }} tickLine={false} axisLine={false} />
+                    <Tooltip
+                      formatter={(value: any, name: string) => [
+                        `$${Number(value).toLocaleString('en-US', { minimumFractionDigits: 0 })}`,
+                        name === 'income' ? 'Income' : 'Expenses',
+                      ]}
+                      contentStyle={{ fontSize: 12, borderRadius: 8, border: '0.5px solid #E4E6EA', boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}
+                      cursor={{ fill: 'rgba(0,0,0,0.03)' }}
+                    />
+                    <Bar dataKey="income" fill="#2D8C56" radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="expenses" fill="#C0392B" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+                <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: 2, background: '#2D8C56' }} />
+                    <span style={{ fontSize: 10, color: '#8B91A0' }}>Income</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: 2, background: '#C0392B' }} />
+                    <span style={{ fontSize: 10, color: '#8B91A0' }}>Expenses</span>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -373,7 +484,7 @@ export default function Home() {
           { label: 'Budget', icon: 'ti-target', href: '/budget' },
           { label: 'Subscriptions', icon: 'ti-repeat', href: '/subscriptions' },
         ].map(item => {
-          const active = typeof window !== 'undefined' && window.location.pathname === item.href
+          const active = pathname === item.href
           return (
             <button key={item.href} onClick={() => window.location.href = item.href} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '0 12px', fontFamily: 'inherit' }}>
               <i className={`ti ${item.icon}`} style={{ fontSize: 22, color: active ? '#0B1F44' : '#B0B4BC' }} aria-hidden="true" />
